@@ -1,0 +1,56 @@
+name: ProgrammingPlanet Godot iOS
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'project.godot'
+      - 'scenes/**'
+      - 'scripts/**'
+      - 'export_presets.cfg'
+      - 'scripts-ci/**'
+      - '.github/workflows/planet-ios.yml'
+  workflow_dispatch:
+jobs:
+  ios-build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.4.1 and iOS export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o godot.zip https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_macos.universal.zip
+          unzip -q godot.zip -d godot-bin
+          GODOT_APP="$(find godot-bin -name Godot.app -type d | head -1)"
+          test -n "$GODOT_APP"
+          echo "GODOT_BIN=$PWD/$GODOT_APP/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+          curl -fL --retry 3 -o templates.tpz https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz
+          mkdir -p "$HOME/Library/Application Support/Godot/export_templates/4.4.1.stable"
+          unzip -q templates.tpz -d templates-extracted
+          cp -R templates-extracted/templates/. "$HOME/Library/Application Support/Godot/export_templates/4.4.1.stable/"
+      - name: Validate project and export iOS Xcode project
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          "$GODOT_BIN" --headless --path . --editor --quit 2>&1 | tee build/import.log
+          "$GODOT_BIN" --headless --path . --export-release iOS build/ProgrammingPlanet.ipa 2>&1 | tee build/export.log
+          find build -maxdepth 4 -type f | sort | tee build/files.txt
+          test -n "$(find build -name '*.xcodeproj' -type d -print -quit)"
+      - name: Compile unsigned iOS app with Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJ="$(find build -name '*.xcodeproj' -type d | head -1)"
+          xcodebuild -list -project "$PROJ" | tee build/xcode-list.log
+          SCHEME="$(xcodebuild -list -json -project "$PROJ" | python3 -c 'import sys,json; d=json.load(sys.stdin); print((d.get("project",{}).get("schemes") or [""])[0])')"
+          test -n "$SCHEME"
+          xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/xcodebuild.log
+      - name: Upload build evidence (not a signed IPA)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProgrammingPlanet-iOS-build-evidence
+          path: build/
+          if-no-files-found: warn
