@@ -1,5 +1,5 @@
 extends Node3D
-## V0.3.0 - mobile-first 3D coding lesson, no arbitrary code execution.
+## V0.4.0 - third-person exploration and programming modes.
 const HOME := Vector3(-4, 0.7, 2)
 const UNIT := 2.0
 var robot: Node3D
@@ -10,6 +10,19 @@ var queue_label: Label
 var mission_label: Label
 var feedback: Label
 var execute_button: Button
+var camera: Camera3D
+var programming_panel: PanelContainer
+var mode_button: Button
+var hint_label: Label
+var exploration := true
+var camera_yaw := 0.0
+var camera_pitch := 0.42
+var camera_distance := 8.5
+var move_axis := Vector2.ZERO
+var move_touch := -1
+var look_touch := -1
+var move_origin := Vector2.ZERO
+var viewport_width := 1.0
 var goals := [Vector3(-4, 0.7, -4), Vector3(0, 0.7, -4), Vector3(4, 0.7, -4)]
 var lessons := ["添加三个前进积木，抵达第一颗星星", "组合前进和转弯，探索第二颗星星", "自由挑战：设计路线，寻找第三颗星星"]
 
@@ -17,6 +30,7 @@ func _ready() -> void:
     _world()
     _ui()
     _refresh()
+    _set_mode(true)
 
 func _box(parent: Node, pos: Vector3, size: Vector3, color: Color) -> void:
     var mesh := MeshInstance3D.new()
@@ -71,11 +85,11 @@ func _world() -> void:
     _sphere(robot, Vector3(-0.2, 0.48, -0.53), 0.11, Color("#68f4e1"))
     _sphere(robot, Vector3(0.2, 0.48, -0.53), 0.11, Color("#68f4e1"))
     _sphere(robot, Vector3(0, 1.03, 0), 0.15, Color("#ffda70"))
-    var camera := Camera3D.new()
-    camera.position = Vector3(12, 17, 21)
-    camera.look_at(Vector3(0, 0, -1))
+    camera = Camera3D.new()
+    camera.fov = 68.0
     camera.current = true
     add_child(camera)
+    _update_camera(1.0)
     _goal()
 
 func _goal() -> void:
@@ -102,7 +116,7 @@ func _ui() -> void:
     column.add_theme_constant_override("separation", 10)
     margin.add_child(column)
     var title := Label.new()
-    title.text = "编程星球 · V0.3.0"
+    title.text = "编程星球 · V0.4.0"
     title.add_theme_font_size_override("font_size", 30)
     title.add_theme_color_override("font_color", Color("#143b62"))
     column.add_child(title)
@@ -110,6 +124,16 @@ func _ui() -> void:
     mission_label.add_theme_font_size_override("font_size", 20)
     mission_label.add_theme_color_override("font_color", Color("#143b62"))
     column.add_child(mission_label)
+    mode_button = Button.new()
+    mode_button.text = "切换：积木编程"
+    mode_button.custom_minimum_size = Vector2(240, 54)
+    mode_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+    mode_button.pressed.connect(func() -> void: _set_mode(not exploration))
+    column.add_child(mode_button)
+    hint_label = Label.new()
+    hint_label.add_theme_color_override("font_color", Color("#17385b"))
+    hint_label.add_theme_font_size_override("font_size", 17)
+    column.add_child(hint_label)
     var spacer := Control.new()
     spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
     column.add_child(spacer)
@@ -120,6 +144,7 @@ func _ui() -> void:
     style.set_content_margin_all(15)
     panel.add_theme_stylebox_override("panel", style)
     column.add_child(panel)
+    programming_panel = panel
     var inside := VBoxContainer.new()
     inside.add_theme_constant_override("separation", 10)
     panel.add_child(inside)
@@ -201,3 +226,63 @@ func _complete() -> void:
 func _refresh() -> void:
     mission_label.text = "第 %d / %d 关  ·  %s" % [level + 1, lessons.size(), lessons[level]]
     queue_label.text = "积木程序： " + (" → ".join(steps) if not steps.is_empty() else "点击下方积木添加指令")
+
+func _set_mode(want_exploration: bool) -> void:
+    exploration = want_exploration
+    programming_panel.visible = not exploration
+    mode_button.text = "切换：积木编程" if exploration else "切换：自由探索"
+    hint_label.text = "左半屏拖动移动 · 右半屏拖动旋转镜头" if exploration else "添加指令后点击执行，抵达星星"
+    move_axis = Vector2.ZERO
+    move_touch = -1
+    look_touch = -1
+    _refresh()
+
+func _input(event: InputEvent) -> void:
+    if not exploration:
+        return
+    viewport_width = maxf(1.0, get_viewport().get_visible_rect().size.x)
+    if event is InputEventScreenTouch:
+        var touch := event as InputEventScreenTouch
+        if touch.pressed:
+            if touch.position.x < viewport_width * 0.48 and move_touch == -1:
+                move_touch = touch.index
+                move_origin = touch.position
+                move_axis = Vector2.ZERO
+            elif touch.position.x >= viewport_width * 0.48 and look_touch == -1:
+                look_touch = touch.index
+        else:
+            if touch.index == move_touch:
+                move_touch = -1
+                move_axis = Vector2.ZERO
+            if touch.index == look_touch:
+                look_touch = -1
+    elif event is InputEventScreenDrag:
+        var drag := event as InputEventScreenDrag
+        if drag.index == move_touch:
+            move_axis = (drag.position - move_origin) / 100.0
+            move_axis = move_axis.limit_length(1.0)
+        elif drag.index == look_touch:
+            camera_yaw -= drag.relative.x * 0.006
+            camera_pitch = clampf(camera_pitch + drag.relative.y * 0.004, 0.12, 1.1)
+
+func _process(delta: float) -> void:
+    if exploration and move_axis.length() > 0.08:
+        var forward := Vector3(-sin(camera_yaw), 0, -cos(camera_yaw))
+        var right := Vector3(cos(camera_yaw), 0, -sin(camera_yaw))
+        var movement := right * move_axis.x + forward * -move_axis.y
+        movement = movement.normalized()
+        robot.position += movement * 4.5 * delta
+        robot.position.x = clampf(robot.position.x, -10.0, 10.0)
+        robot.position.z = clampf(robot.position.z, -8.0, 8.0)
+        robot.rotation.y = atan2(-movement.x, -movement.z)
+    _update_camera(delta)
+
+func _update_camera(delta: float) -> void:
+    if camera == null or robot == null:
+        return
+    var focus := robot.global_position + Vector3(0, 1.1, 0)
+    var horizontal := cos(camera_pitch) * camera_distance
+    var offset := Vector3(sin(camera_yaw) * horizontal, sin(camera_pitch) * camera_distance + 1.0, cos(camera_yaw) * horizontal)
+    var target := focus + offset
+    camera.global_position = camera.global_position.lerp(target, clampf(delta * 7.0, 0.0, 1.0))
+    camera.look_at(focus, Vector3.UP)
