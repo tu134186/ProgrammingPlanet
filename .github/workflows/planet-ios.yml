@@ -64,10 +64,20 @@ jobs:
           (cd build/unsigned-payload && zip -qry ../ProgrammingPlanet-unsigned.ipa Payload)
           test -s build/ProgrammingPlanet-unsigned.ipa
           echo "Unsigned IPA generated; must be signed before installation."
+      - name: Upload standalone unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProgrammingPlanet-V0.4.0-unsigned-IPA
+          path: build/ProgrammingPlanet-unsigned.ipa
+          if-no-files-found: error
       - name: Upload build evidence (not a signed IPA)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ProgrammingPlanet-iOS-build-evidence
-          path: build/
+          path: |
+            build/*.log
+            build/*.txt
+            build/*.xcodeproj/**
+            build/*.xcworkspace/**
           if-no-files-found: warn
