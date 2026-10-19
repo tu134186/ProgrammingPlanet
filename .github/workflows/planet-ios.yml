@@ -53,6 +53,17 @@ jobs:
           SCHEME="$(xcodebuild -list -json -project "$PROJ" | python3 -c 'import sys,json; d=json.load(sys.stdin); print((d.get("project",{}).get("schemes") or [""])[0])')"
           test -n "$SCHEME"
           xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/xcodebuild.log
+      - name: Package unsigned IPA for external signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Release-iphoneos/ProgrammingPlanet.app' -type d -print -quit)"
+          test -n "$APP"
+          mkdir -p build/unsigned-payload/Payload
+          ditto "$APP" build/unsigned-payload/Payload/ProgrammingPlanet.app
+          (cd build/unsigned-payload && zip -qry ../ProgrammingPlanet-unsigned.ipa Payload)
+          test -s build/ProgrammingPlanet-unsigned.ipa
+          echo "Unsigned IPA generated; must be signed before installation."
       - name: Upload build evidence (not a signed IPA)
         if: always()
         uses: actions/upload-artifact@v4
