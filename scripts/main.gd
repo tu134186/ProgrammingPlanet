@@ -1,111 +1,203 @@
 extends Node3D
-## V0.2.0 mobile-first exploration prototype. No arbitrary code execution.
-var steps: Array[String] = []
+## V0.3.0 - mobile-first 3D coding lesson, no arbitrary code execution.
+const HOME := Vector3(-4, 0.7, 2)
+const UNIT := 2.0
 var robot: Node3D
-var player: CharacterBody3D
-var status: Label
-var tasks: Label
-var lesson_index := 0
-var challenges := ["向前移动 3 步", "向右转并前进 2 步", "重复前进 4 步"]
+var steps: Array[String] = []
+var level := 0
+var busy := false
+var queue_label: Label
+var mission_label: Label
+var feedback: Label
+var execute_button: Button
+var goals := [Vector3(-4, 0.7, -4), Vector3(0, 0.7, -4), Vector3(4, 0.7, -4)]
+var lessons := ["添加三个前进积木，抵达第一颗星星", "组合前进和转弯，探索第二颗星星", "自由挑战：设计路线，寻找第三颗星星"]
 
 func _ready() -> void:
-    _create_world()
-    _create_interface()
+    _world()
+    _ui()
     _refresh()
 
-func _create_world() -> void:
-    var environment := WorldEnvironment.new()
-    var env := Environment.new()
-    env.background_mode = Environment.BG_COLOR
-    env.background_color = Color(0.44, 0.75, 0.96)
-    env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color.WHITE
-    env.ambient_light_energy = 0.8
-    environment.environment = env
-    add_child(environment)
-    var sun := DirectionalLight3D.new()
-    sun.rotation_degrees = Vector3(-55, 30, 0)
-    add_child(sun)
-    _box(Vector3(0, -0.35, 0), Vector3(22, 0.6, 22), Color(0.30, 0.69, 0.43))
-    for i in range(8):
-        _box(Vector3(-8 + i * 2.2, 0.2, -5), Vector3(0.9, 1.1, 0.9), Color(0.87, 0.66, 0.36))
-    player = CharacterBody3D.new()
-    player.position = Vector3(0, 0.65, 0)
-    add_child(player)
-    _box(Vector3(0, 0.0, 0), Vector3(0.7, 1.2, 0.7), Color(0.27, 0.43, 0.9), player)
-    robot = Node3D.new()
-    robot.position = Vector3(2, 0.65, 0)
-    add_child(robot)
-    _box(Vector3.ZERO, Vector3(0.75, 0.85, 0.75), Color(1.0, 0.73, 0.23), robot)
-    var camera := Camera3D.new()
-    camera.position = Vector3(8, 11, 15)
-    camera.look_at(Vector3.ZERO)
-    camera.current = true
-    add_child(camera)
-
-func _box(pos: Vector3, size: Vector3, color: Color, parent: Node = self) -> void:
+func _box(parent: Node, pos: Vector3, size: Vector3, color: Color) -> void:
     var mesh := MeshInstance3D.new()
-    var box := BoxMesh.new()
-    box.size = size
-    mesh.mesh = box
-    var material := StandardMaterial3D.new()
-    material.albedo_color = color
-    mesh.material_override = material
+    var shape := BoxMesh.new()
+    shape.size = size
+    mesh.mesh = shape
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = color
+    mesh.material_override = mat
     mesh.position = pos
     parent.add_child(mesh)
 
-func _create_interface() -> void:
+func _sphere(parent: Node, pos: Vector3, radius: float, color: Color) -> void:
+    var mesh := MeshInstance3D.new()
+    var shape := SphereMesh.new()
+    shape.radius = radius
+    shape.height = radius * 2
+    mesh.mesh = shape
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = color
+    mesh.material_override = mat
+    mesh.position = pos
+    parent.add_child(mesh)
+
+func _world() -> void:
+    var sky := WorldEnvironment.new()
+    var env := Environment.new()
+    env.background_mode = Environment.BG_COLOR
+    env.background_color = Color("#81c9f6")
+    env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    env.ambient_light_color = Color.WHITE
+    sky.environment = env
+    add_child(sky)
+    var sun := DirectionalLight3D.new()
+    sun.rotation_degrees = Vector3(-50, 25, 0)
+    add_child(sun)
+    _box(self, Vector3(0, -0.4, 0), Vector3(30, 0.7, 24), Color("#57bf76"))
+    for x in range(-5, 6):
+        for z in range(-4, 5):
+            var color := Color("#b7eeac") if (x + z) % 2 == 0 else Color("#a0e6a2")
+            _box(self, Vector3(x * UNIT, -0.02, z * UNIT), Vector3(1.92, 0.08, 1.92), color)
+    for i in range(8):
+        var px := -12.5 if i % 2 == 0 else 12.5
+        var pz := -8.0 + i * 2.2
+        _box(self, Vector3(px, 0.65, pz), Vector3(0.45, 1.3, 0.45), Color("#a46a48"))
+        _sphere(self, Vector3(px, 2.0, pz), 1.0, Color("#32ad6d"))
+    robot = Node3D.new()
+    robot.position = HOME
+    add_child(robot)
+    _box(robot, Vector3(0, 0.35, 0), Vector3(1.05, 0.9, 0.85), Color("#f5f8ff"))
+    _box(robot, Vector3(0, 0.48, -0.45), Vector3(0.75, 0.43, 0.1), Color("#263a69"))
+    _sphere(robot, Vector3(-0.2, 0.48, -0.53), 0.11, Color("#68f4e1"))
+    _sphere(robot, Vector3(0.2, 0.48, -0.53), 0.11, Color("#68f4e1"))
+    _sphere(robot, Vector3(0, 1.03, 0), 0.15, Color("#ffda70"))
+    var camera := Camera3D.new()
+    camera.position = Vector3(12, 17, 21)
+    camera.look_at(Vector3(0, 0, -1))
+    camera.current = true
+    add_child(camera)
+    _goal()
+
+func _goal() -> void:
+    for old in get_tree().get_nodes_in_group("goal"):
+        old.queue_free()
+    var marker := Node3D.new()
+    marker.add_to_group("goal")
+    marker.position = goals[level]
+    add_child(marker)
+    _sphere(marker, Vector3(0, 0.55, 0), 0.52, Color("#ffdc55"))
+    _sphere(marker, Vector3(0, 1.18, 0), 0.19, Color("#fff9c2"))
+
+func _ui() -> void:
     var layer := CanvasLayer.new()
     add_child(layer)
-    var root := MarginContainer.new()
-    root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    root.add_theme_constant_override("margin_left", 22)
-    root.add_theme_constant_override("margin_top", 52)
-    root.add_theme_constant_override("margin_right", 22)
-    root.add_theme_constant_override("margin_bottom", 22)
-    layer.add_child(root)
+    var margin := MarginContainer.new()
+    margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    margin.add_theme_constant_override("margin_left", 22)
+    margin.add_theme_constant_override("margin_right", 22)
+    margin.add_theme_constant_override("margin_top", 20)
+    margin.add_theme_constant_override("margin_bottom", 20)
+    layer.add_child(margin)
     var column := VBoxContainer.new()
-    root.add_child(column)
+    column.add_theme_constant_override("separation", 10)
+    margin.add_child(column)
     var title := Label.new()
-    title.text = "编程星球 · V0.2.0"
-    title.add_theme_font_size_override("font_size", 28)
+    title.text = "编程星球 · V0.3.0"
+    title.add_theme_font_size_override("font_size", 30)
+    title.add_theme_color_override("font_color", Color("#143b62"))
     column.add_child(title)
-    tasks = Label.new()
-    column.add_child(tasks)
-    status = Label.new()
-    column.add_child(status)
-    var space := Control.new()
-    space.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    column.add_child(space)
+    mission_label = Label.new()
+    mission_label.add_theme_font_size_override("font_size", 20)
+    mission_label.add_theme_color_override("font_color", Color("#143b62"))
+    column.add_child(mission_label)
+    var spacer := Control.new()
+    spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    column.add_child(spacer)
+    var panel := PanelContainer.new()
+    var style := StyleBoxFlat.new()
+    style.bg_color = Color(0.07, 0.18, 0.32, 0.87)
+    style.set_corner_radius_all(18)
+    style.set_content_margin_all(15)
+    panel.add_theme_stylebox_override("panel", style)
+    column.add_child(panel)
+    var inside := VBoxContainer.new()
+    inside.add_theme_constant_override("separation", 10)
+    panel.add_child(inside)
+    queue_label = Label.new()
+    queue_label.add_theme_font_size_override("font_size", 18)
+    queue_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    inside.add_child(queue_label)
+    feedback = Label.new()
+    feedback.text = "编排积木，让机器人走向星星！"
+    feedback.add_theme_color_override("font_color", Color("#ffdf8d"))
+    inside.add_child(feedback)
     var bar := HBoxContainer.new()
-    column.add_child(bar)
-    for label in ["前进", "右转", "重复", "执行", "清空"]:
-        var b := Button.new()
-        b.text = label
-        b.custom_minimum_size = Vector2(0, 64)
-        b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        b.pressed.connect(_pressed.bind(label))
-        bar.add_child(b)
+    bar.add_theme_constant_override("separation", 8)
+    inside.add_child(bar)
+    for action in ["前进", "右转", "重复", "撤销", "清空", "执行"]:
+        var button := Button.new()
+        button.text = action
+        button.custom_minimum_size = Vector2(0, 66)
+        button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        button.add_theme_font_size_override("font_size", 18)
+        button.pressed.connect(_press.bind(action))
+        bar.add_child(button)
+        if action == "执行":
+            execute_button = button
 
-func _pressed(action: String) -> void:
+func _press(action: String) -> void:
+    if busy:
+        return
     match action:
-        "前进", "右转": steps.append(action)
+        "前进", "右转":
+            if steps.size() < 20:
+                steps.append(action)
         "重复":
-            if not steps.is_empty(): steps.append(steps.back())
-        "清空": steps.clear()
-        "执行":
-            var facing := 0
-            var start := robot.position
-            for step in steps:
-                if step == "右转": facing = (facing + 1) % 4
-                elif step == "前进":
-                    var dirs := [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)]
-                    robot.position += dirs[facing]
-            if robot.position.distance_to(start) > 0.1:
-                lesson_index = mini(lesson_index + 1, challenges.size() - 1)
+            if not steps.is_empty() and steps.size() < 20:
+                steps.append(steps.back())
+        "撤销":
+            if not steps.is_empty():
+                steps.pop_back()
+        "清空":
             steps.clear()
+        "执行":
+            if steps.is_empty():
+                feedback.text = "先添加积木，再点击执行"
+            else:
+                _run()
+    _refresh()
+
+func _run() -> void:
+    busy = true
+    execute_button.disabled = true
+    robot.position = HOME
+    robot.rotation.y = 0
+    var pos := HOME
+    var direction := 0
+    var animation := create_tween()
+    var dirs := [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)]
+    for command in steps:
+        if command == "右转":
+            direction = (direction + 1) % 4
+            animation.tween_property(robot, "rotation:y", -float(direction) * PI / 2.0, 0.35)
+        else:
+            pos += dirs[direction] * UNIT
+            animation.tween_property(robot, "position", pos, 0.42)
+    animation.tween_callback(_complete)
+
+func _complete() -> void:
+    busy = false
+    execute_button.disabled = false
+    if robot.position.distance_to(goals[level]) < 0.6:
+        feedback.text = "挑战成功！机器人找到星星啦！"
+        if level < lessons.size() - 1:
+            level += 1
+            _goal()
+        steps.clear()
+    else:
+        feedback.text = "还没到星星，再调整积木试试！"
     _refresh()
 
 func _refresh() -> void:
-    tasks.text = "自由挑战：%s" % challenges[lesson_index]
-    status.text = "积木指令：%s" % (" → ".join(steps) if not steps.is_empty() else "点击下方积木开始")
+    mission_label.text = "第 %d / %d 关  ·  %s" % [level + 1, lessons.size(), lessons[level]]
+    queue_label.text = "积木程序： " + (" → ".join(steps) if not steps.is_empty() else "点击下方积木添加指令")
