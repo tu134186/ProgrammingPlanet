@@ -35,7 +35,13 @@ jobs:
           set -euo pipefail
           mkdir -p build
           "$GODOT_BIN" --headless --path . --editor --quit 2>&1 | tee build/import.log
-          "$GODOT_BIN" --headless --path . --export-release iOS build/ProgrammingPlanet.ipa 2>&1 | tee build/export.log
+          echo "=== Godot and export template diagnostics ===" | tee build/preflight.txt
+          "$GODOT_BIN" --version | tee -a build/preflight.txt
+          xcodebuild -version | tee -a build/preflight.txt
+          find "$HOME/Library/Application Support/Godot/export_templates/4.4.1.stable" -maxdepth 2 -type f | head -30 | tee -a build/preflight.txt
+          echo "=== export preset (non-secret fields) ===" | tee -a build/preflight.txt
+          grep -E "^(name|platform|application/app_store_team_id|application/bundle_identifier|application/export_project_only)=" export_presets.cfg | tee -a build/preflight.txt
+          "$GODOT_BIN" --verbose --headless --path . --export-release iOS build/ProgrammingPlanet.ipa 2>&1 | tee build/export.log
           find build -maxdepth 4 -type f | sort | tee build/files.txt
           test -n "$(find build -name '*.xcodeproj' -type d -print -quit)"
       - name: Compile unsigned iOS app with Xcode
